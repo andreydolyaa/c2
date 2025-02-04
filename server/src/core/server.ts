@@ -15,6 +15,7 @@ export class C2Server {
   router: Router;
   websocketServer: WebSocketServer | null;
   c2server: Server;
+  running: boolean;
 
   constructor(options: ServerOptions) {
     this.app = express();
@@ -22,22 +23,23 @@ export class C2Server {
     this.port = options.port;
     this.websocketServer = null;
     this.c2server = http.createServer(this.app);
-
+    this.running = false;
     this.init();
   }
 
-  init() {
+  init(): void {
     this.app.use(express.json());
     this.app.use(cors());
     this.app.use(this.router);
   }
 
-  run() {
+  async run(): Promise<void> {
     this.c2server.listen(this.port, () => {
       logger.info(`http server started [${this.port}]`);
       try {
         this.startWebsocketServer();
         logger.info(`websocket server initialized`);
+        this.running = true;
       } catch (error) {
         logger.error(`failed to initialize websocket server: [${error}]`);
       }
@@ -47,7 +49,26 @@ export class C2Server {
     });
   }
 
-  startWebsocketServer() {
+  stop(): void {
+    if (!this.running) return;
+
+    if (this.websocketServer) {
+      this.websocketServer.close(() => {
+        logger.info("websocket server stopped.");
+      });
+    }
+
+    this.c2server.close((error) => {
+      if (error) {
+        logger.error(`error stopping http server: [${error}]`);
+      } else {
+        this.running = false;
+        logger.info("http server stopped.");
+      }
+    });
+  }
+
+  startWebsocketServer(): void {
     this.websocketServer = new WebSocketServer({ server: this.c2server });
     this.websocketServer.on("connection", (websocket, req) => {
       websocket.on("message", this.onWebsocketMessage);
@@ -56,9 +77,16 @@ export class C2Server {
     });
   }
 
-  onWebsocketMessage(message: string | Buffer | ArrayBuffer | Buffer[]) {
-    console.log(message);
+  onWebsocketMessage(message: string | Buffer | ArrayBuffer | Buffer[]): void {
+    console.log(message.toString());
   }
-  onWebsocketClose() {}
-  onWebsocketError() {}
+
+  onWebsocketClose(code: number, reason: string | Buffer): void {
+    console.log(code);
+    console.log(reason);
+  }
+
+  onWebsocketError(error: Error): void {
+    console.log(error);
+  }
 }
